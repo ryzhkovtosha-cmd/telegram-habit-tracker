@@ -7,7 +7,7 @@
 
 from datetime import date
 import telebot
-from .api_client import api_request
+from api_client import api_request
 
 def register_daily(bot):
     """Регистрирует обработчики ежедневного списка."""

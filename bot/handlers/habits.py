@@ -7,7 +7,7 @@
 """
 
 import telebot
-from .api_client import api_request
+from api_client import api_request
 
 def register_habits(bot):
     """Регистрирует все обработчики, связанные с CRUD привычек."""

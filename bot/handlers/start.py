@@ -2,7 +2,7 @@
 Обработчики команд /start и /help.
 """
 
-from .api_client import api_request, user_tokens
+from api_client import api_request, user_tokens
 
 def register_start(bot):
     """Регистрирует обработчики на объекте бота."""
