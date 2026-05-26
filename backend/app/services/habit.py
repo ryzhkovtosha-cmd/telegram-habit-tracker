@@ -77,10 +77,12 @@ async def get_daily_habits(user_id: int, target_date: date, db: AsyncSession) ->
 
 
 async def mark_habit_completed(habit_id: int, user_id: int, target_date: date, db: AsyncSession) -> DailyCompletion | None:
+    """Отмечает привычку выполненной на указанную дату."""
     habit = await db.get(Habit, habit_id)
     if not habit or habit.user_id != user_id or habit.completion_count >= settings.HABIT_DAYS_GOAL:
         return None
 
+    # Ищем или создаём ежедневную запись
     result = await db.execute(
         select(DailyCompletion).where(
             DailyCompletion.habit_id == habit_id,
@@ -92,14 +94,15 @@ async def mark_habit_completed(habit_id: int, user_id: int, target_date: date, d
         record = DailyCompletion(habit_id=habit_id, date=target_date, completed=False)
         db.add(record)
 
-    # Присоединяем объект привычки, чтобы не требовалась ленивая загрузка
+    # Присоединяем объект привычки, чтобы избежать ленивой загрузки в роутере
     record.habit = habit
 
+    # Увеличиваем счётчик, только если привычка ещё не была выполнена
     if not record.completed:
         record.completed = True
         habit.completion_count += 1
         await db.commit()
-        # refresh не делаем, чтобы не стереть присоединённый habit
+        # Не делаем refresh, чтобы не потерять явно присоединённый habit
     return record
 
 async def daily_habits_transfer(user_id: int, db: AsyncSession) -> None:
@@ -123,11 +126,13 @@ async def daily_habits_transfer(user_id: int, db: AsyncSession) -> None:
             db.add(rec)
     await db.commit()
 
-async def mark_habit_failed(habit_id: int, user_id: int, target_date: date,
-                            db: AsyncSession) -> DailyCompletion | None:
+async def mark_habit_failed(habit_id: int, user_id: int, target_date: date, db: AsyncSession) -> DailyCompletion | None:
+    """Отмечает привычку как невыполненную, уменьшая счётчик при необходимости."""
     habit = await db.get(Habit, habit_id)
     if not habit or habit.user_id != user_id or habit.completion_count >= settings.HABIT_DAYS_GOAL:
         return None
+
+    # Ищем или создаём запись
     result = await db.execute(
         select(DailyCompletion).where(
             DailyCompletion.habit_id == habit_id,
@@ -137,9 +142,15 @@ async def mark_habit_failed(habit_id: int, user_id: int, target_date: date,
     record = result.scalars().first()
     if not record:
         record = DailyCompletion(habit_id=habit_id, date=target_date, completed=False)
-        record.habit = habit
         db.add(record)
-    record.completed = False  # явно ставим не выполнено
+
+    # Явно присоединяем привычку
+    record.habit = habit
+
+    # Если ранее было выполнено, уменьшаем счётчик (не ниже нуля)
+    if record.completed:
+        habit.completion_count = max(0, habit.completion_count - 1)
+    record.completed = False
     await db.commit()
     return record
 

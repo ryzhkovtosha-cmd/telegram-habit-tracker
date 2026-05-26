@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str = os.getenv("JWT_SECRET", "supersecretkey")
     JWT_ALGORITHM: str = "HS256"
     HABIT_DAYS_GOAL: int = 21   # количество дней для закрепления привычки
-
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
+    
     class Config:
         env_file = ".env"
 

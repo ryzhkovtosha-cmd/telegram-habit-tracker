@@ -1,7 +1,8 @@
 """
-Сервис аутентификации: регистрация и создание JWT.
+Сервис аутентификации: регистрация и создание JWT с ограниченным сроком жизни.
 """
 import jwt
+from datetime import datetime, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.config import settings
@@ -19,6 +20,14 @@ async def get_or_create_user(telegram_id: int, username: str | None, db: AsyncSe
     return user
 
 def create_access_token(telegram_id: int) -> str:
-    """Генерирует JWT с идентификатором пользователя."""
-    payload = {"sub": str(telegram_id)}
+    """
+    Генерирует JWT с идентификатором пользователя.
+    Время жизни токена задаётся в настройках (по умолчанию 2 часа).
+    """
+    # Вычисляем время истечения
+    expire = datetime.utcnow() + timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS)
+    payload = {
+        "sub": str(telegram_id),
+        "exp": expire
+    }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
