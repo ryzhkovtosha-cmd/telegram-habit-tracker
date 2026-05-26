@@ -30,5 +30,5 @@ def start_scheduler(bot):
                 print(f"Ошибка отправки напоминания {chat_id}: {e}")
 
     # Каждый день в 9:00
-    scheduler.add_job(send_reminders, 'cron', hour=9, minute=00)
+    scheduler.add_job(send_reminders, 'cron', hour=9, minute=0)
     scheduler.start()
