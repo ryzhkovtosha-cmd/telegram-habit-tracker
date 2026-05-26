@@ -4,12 +4,11 @@
 """
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from api_client import user_tokens   # словарь chat_id → токен, чтобы знать, кому отправлять
+from token_storage import get_all_chat_ids   # получаем список chat_id из БД
 
 def start_scheduler(bot):
     """
     Настраивает и запускает планировщик.
-
     Задача: каждый день в 9:00 (UTC) отправляет всем авторизованным пользователям
     сообщение с напоминанием отметить выполнение привычек.
     """
@@ -18,10 +17,9 @@ def start_scheduler(bot):
     def send_reminders():
         """
         Функция, вызываемая по расписанию.
-        Проходит по всем chat_id из user_tokens и пытается отправить сообщение.
+        Получает все chat_id из SQLite и пытается отправить сообщение.
         """
-        # Делаем копию списка ключей, т.к. словарь может меняться во время итерации
-        for chat_id in list(user_tokens.keys()):
+        for chat_id in get_all_chat_ids():
             try:
                 bot.send_message(
                     chat_id,
@@ -31,8 +29,6 @@ def start_scheduler(bot):
                 # Ошибка может возникнуть, если пользователь заблокировал бота и т.п.
                 print(f"Ошибка отправки напоминания {chat_id}: {e}")
 
-    # Добавляем задание: cron-выражение 'hour=9, minute=0' – каждый день в 9:00
-    scheduler.add_job(send_reminders, 'cron', hour=9, minute=0)
-
-    # Запускаем планировщик в фоне (не блокирует основной поток)
+    # Каждый день в 9:00
+    scheduler.add_job(send_reminders, 'cron', hour=9, minute=00)
     scheduler.start()

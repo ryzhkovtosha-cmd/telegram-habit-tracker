@@ -2,7 +2,8 @@
 Обработчики команд /start и /help.
 """
 
-from api_client import api_request, user_tokens
+from api_client import api_request
+from token_storage import save_token
 
 def register_start(bot):
     """Регистрирует обработчики на объекте бота."""
@@ -28,8 +29,8 @@ def register_start(bot):
         )
 
         if resp and "access_token" in resp:
-            # Сохраняем токен в памяти для последующих запросов
-            user_tokens[message.chat.id] = resp["access_token"]
+                # Сохраняем токен и telegram_id в SQLite
+            save_token(message.chat.id, resp["access_token"], telegram_id)
             bot.reply_to(
                 message,
                 "✅ Авторизация успешна!\n\n"

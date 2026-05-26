@@ -1,71 +1,72 @@
+
 """
-Модуль для взаимодействия с backend API.
-Содержит универсальную функцию api_request и хранилище JWT-токенов пользователей.
+HTTP-клиент с автоматическим восстановлением токена при 401.
 """
 
 import requests
-from config import API_BASE_URL   # импортируем базовый URL из конфига
+from config import API_BASE_URL
+from token_storage import get_token, save_token, get_telegram_id
 
-# Хранилище токенов: ключ – ID чата (chat_id), значение – JWT-токен (строка).
-# Токены сохраняются только в оперативной памяти процесса.
-# При перезапуске контейнера бота все токены теряются,
-# и пользователю потребуется повторно отправить /start.
-user_tokens = {}
-
-def get_token(chat_id: int) -> str | None:
-    """Возвращает токен для указанного chat_id или None, если пользователь не авторизован."""
-    return user_tokens.get(chat_id)
+def refresh_token(chat_id: int) -> str | None:
+    """
+    Запрашивает новый токен для пользователя, используя сохранённый telegram_id.
+    Вызывается при получении 401 ответа.
+    """
+    tid = get_telegram_id(chat_id)
+    if tid is None:
+        print(f"Не удалось обновить токен: отсутствует telegram_id для chat_id={chat_id}")
+        return None
+    try:
+        resp = requests.post(
+            f"{API_BASE_URL}/auth/register",
+            json={"telegram_id": tid, "username": None}
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        new_token = data.get("access_token")
+        if new_token:
+            save_token(chat_id, new_token, tid)
+            return new_token
+    except requests.RequestException as e:
+        print(f"Ошибка обновления токена: {e}")
+    return None
 
 def api_request(method: str, endpoint: str, chat_id: int,
-                json_data: dict | None = None, params: dict | None = None):
+                json_data: dict | None = None, params: dict | None = None) -> dict | None:
     """
-    Выполняет HTTP-запрос к FastAPI от имени пользователя.
-
-    Параметры:
-        method: HTTP-метод ('GET', 'POST', 'PUT', 'DELETE').
-        endpoint: путь API (например, '/habits/').
-        chat_id: ID чата Telegram, используется для получения токена.
-        json_data: словарь с JSON-телом запроса (для POST/PUT).
-        params: словарь с query-параметрами (для GET).
-
-    Возвращает:
-        Словарь с JSON-ответом, если запрос успешен.
-        None при ошибке или пустом ответе (204 No Content).
+    Выполняет HTTP-запрос с автоматическим повтором при истечении токена.
     """
-    # Собираем полный URL
     url = f"{API_BASE_URL}{endpoint}"
-
-    # Если для данного чата есть сохранённый токен, добавляем заголовок авторизации
-    headers = {}
     token = get_token(chat_id)
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     try:
-        # Выполняем соответствующий запрос
-        if method == "GET":
-            resp = requests.get(url, headers=headers, params=params)
-        elif method == "POST":
-            resp = requests.post(url, json=json_data, headers=headers)
-        elif method == "PUT":
-            resp = requests.put(url, json=json_data, headers=headers)
-        elif method == "DELETE":
-            resp = requests.delete(url, headers=headers)
-        else:
-            # Неизвестный метод – возвращаем None
-            return None
+        # Первая попытка
+        resp = _make_request(method, url, headers, json_data, params)
+        if resp.status_code == 401:
+            print("Токен истёк, обновляю...")
+            new_token = refresh_token(chat_id)
+            if new_token:
+                headers["Authorization"] = f"Bearer {new_token}"
+                resp = _make_request(method, url, headers, json_data, params)
 
-        # Если статус не 2xx, генерируется исключение
         resp.raise_for_status()
-
-        # Если ответ 204 No Content (например, при удалении), возвращаем None
         if resp.status_code == 204:
             return None
-
-        # Возвращаем распарсенный JSON
         return resp.json()
-
     except requests.RequestException as e:
-        # Логируем ошибку (в production можно писать в файл или систему мониторинга)
-        print(f"API error: {e}")
+        print(f"API error [{method} {endpoint}]: {e}")
         return None
+
+def _make_request(method, url, headers, json_data, params):
+    """Вспомогательная функция для выполнения одного HTTP-запроса."""
+    if method == "GET":
+        return requests.get(url, headers=headers, params=params)
+    elif method == "POST":
+        return requests.post(url, json=json_data, headers=headers)
+    elif method == "PUT":
+        return requests.put(url, json=json_data, headers=headers)
+    elif method == "DELETE":
+        return requests.delete(url, headers=headers)
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
